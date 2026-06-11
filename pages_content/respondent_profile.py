@@ -6,6 +6,7 @@ sample representativeness. All distribution bars are shown as share of responden
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from components.cards import kpi_card
@@ -18,16 +19,6 @@ def _counts(df, col):
     if col not in df.columns:
         return pd.Series(dtype=int)
     return df[col].dropna().astype(str).replace("", pd.NA).dropna().value_counts()
-
-
-def _multi_counts(df, col, sep=";"):
-    if col not in df.columns:
-        return pd.Series(dtype=int)
-    s = df[col].dropna().astype(str)
-    s = s[s.str.strip() != ""]
-    exploded = s.str.split(sep).explode().str.strip()
-    exploded = exploded[exploded != ""]
-    return exploded.value_counts()
 
 
 def render_kpis(df):
@@ -153,36 +144,77 @@ def render_occupation(df):
     plot(box, fig)
 
 
-def render_other_banks(df):
-    box = chart_card("Other Banks Used", "Share of respondents using each bank alongside Bank XYZ",
-                     icon=("account_balance", "dark", 18))
-    counts = _multi_counts(df, "A1A")
-    counts = counts[counts.index != "Bank XYZ"]
-    _hbar(box, counts, len(df), top_n=8)
-
-
-def render_motivation(df):
-    box = chart_card("Account Opening Motivation", "Share of respondents (A2)", icon=("savings", "teal", 18))
-    counts = _multi_counts(df, "A2")
+def _ordinal_data(df, col, label_map, order):
+    """Ordered counts/percentages for an ordinal category (fixed order, not by count)."""
+    counts = _counts(df, col)
     if counts.empty:
+        return None
+    counts.index = counts.index.map(lambda x: label_map.get(x, x))
+    counts = counts.groupby(level=0).sum()
+    total = len(df)
+    display = [c for c in order if c in counts.index] + [c for c in counts.index if c not in order]
+    data = pd.DataFrame({"Category": display, "Count": [int(counts.get(c, 0)) for c in display]})
+    data["pct"] = (data["Count"] / total * 100).round(1)
+    return data
+
+
+def render_tenure(df):
+    box = chart_card("Length of Relationship", "Customer lifecycle by tenure with Bank XYZ",
+                     icon=("history", "teal", 18))
+    data = _ordinal_data(df, "S4", L.TENURE_MAP, L.TENURE_ORDER)
+    if data is None:
         empty_state(box); return
-    short = {
-        "Untuk menabung": "To save money",
-        "Untuk menerima gaji dari tempat saya bekerja": "To receive salary",
-        "Untuk melakukan transaksi finansial saya sehari-hari (seperti pembayaran tagihan listrik, telepon, pembelian pulsa telepon, pembelian token listrik, dll)": "Daily transactions",
-        "Untuk investasi": "For investment",
-        "Untuk menunjang bisnis saya (menerima transfer dana dari klien/konsumen saya)": "To support my business",
-    }
-    counts.index = counts.index.map(lambda x: short.get(x, (x[:40] + "…") if len(x) > 42 else x))
-    _hbar(box, counts.groupby(level=0).sum(), len(df), top_n=8)
+    fig = px.funnel(data, x="Count", y="Category")
+    fig.update_traces(
+        marker=dict(color=data["Count"], colorscale=PALETTE_CONTINUOUS, line=dict(color="white", width=1.5)),
+        text=data["pct"], texttemplate="%{text}%", textposition="inside",
+        textfont=dict(color="white", size=12), customdata=data["Count"],
+        hovertemplate="<b>%{y}</b><br>%{customdata} resp. (%{text}%)<extra></extra>",
+    )
+    fig.update_layout(height=330, margin=dict(l=10, r=20, t=20, b=30), paper_bgcolor="white",
+                      plot_bgcolor="white", font=dict(color="#0f172a", size=12), showlegend=False)
+    fig.update_yaxes(title=None)
+    plot(box, fig)
+
+
+def render_frequency(df):
+    box = chart_card("Transaction Frequency", "Share of respondents by how often they transact",
+                     icon=("sync", "dark", 18))
+    data = _ordinal_data(df, "S7", L.FREQUENCY_MAP, L.FREQUENCY_ORDER)
+    if data is None:
+        empty_state(box); return
+    cats = data["Category"].tolist()
+    counts = data["Count"].tolist()
+    pcts = data["pct"].tolist()
+    max_r = max(counts) if counts else 1
+    fig = go.Figure(go.Scatterpolar(
+        r=counts + [counts[0]], theta=cats + [cats[0]],
+        fill="toself", fillcolor="rgba(10,65,116,0.25)", line=dict(color="#0A4174", width=2.5),
+        marker=dict(size=8, color="#0A4174"), mode="lines+markers+text",
+        text=[f"{p}%" for p in pcts] + [f"{pcts[0]}%"], textposition="top center",
+        textfont=dict(size=11, color="#0f172a"), customdata=counts + [counts[0]],
+        hovertemplate="<b>%{theta}</b><br>%{customdata} resp.<extra></extra>",
+    ))
+    fig.update_layout(
+        height=330, margin=dict(l=60, r=60, t=40, b=40), paper_bgcolor="white",
+        font=dict(color="#0f172a", size=12), showlegend=False,
+        polar=dict(bgcolor="white",
+                   radialaxis=dict(visible=True, range=[0, max_r * 1.15], gridcolor="#E2E8F0",
+                                   tickfont=dict(size=10, color="#64748b")),
+                   angularaxis=dict(gridcolor="#E2E8F0", tickfont=dict(size=11, color="#0f172a"))),
+    )
+    plot(box, fig)
 
 
 def render_insights(df):
-    total = len(df)
     top_age = _counts(df, "S2_2")
     top_age = L.clean_age(top_age.idxmax()) if not top_age.empty else "-"
     g = _counts(df, "S1")
     top_gender = L.GENDER_MAP.get(g.idxmax(), g.idxmax()) if not g.empty else "-"
+    ten = _counts(df, "S4")
+    top_tenure = L.TENURE_MAP.get(ten.idxmax(), ten.idxmax()) if not ten.empty else "-"
+    freq = _counts(df, "S7")
+    top_freq = L.FREQUENCY_MAP.get(freq.idxmax(), freq.idxmax()) if not freq.empty else "-"
 
     st.markdown(
         f"""
@@ -192,8 +224,8 @@ def render_insights(df):
                    display:grid; grid-template-columns:repeat(2, 1fr); gap:10px 36px;">
             <li>{mi("cake", ICON["dark"])}The most common age group is <b>{top_age}</b>.</li>
             <li>{mi("wc", ICON["mid"])}The largest gender group is <b>{top_gender}</b>.</li>
-            <li>{mi("account_balance", ICON["teal"])}The "other banks used" chart reveals the competitors held alongside Bank XYZ.</li>
-            <li>{mi("savings", ICON["soft"])}Saving and salary receipt dominate the reasons for opening an account.</li>
+            <li>{mi("history", ICON["teal"])}Most respondents have banked with Bank XYZ for <b>{top_tenure}</b>.</li>
+            <li>{mi("sync", ICON["soft"])}The most common transaction frequency is <b>{top_freq}</b>.</li>
         </ul>
     </div>
     """,
@@ -225,9 +257,9 @@ def render_respondent_profile(df, labels=None, mode="Mean"):
     spacer()
     r3c1, r3c2 = st.columns([1, 1])
     with r3c1:
-        render_other_banks(df)
+        render_tenure(df)
     with r3c2:
-        render_motivation(df)
+        render_frequency(df)
 
     spacer()
     render_insights(df)
