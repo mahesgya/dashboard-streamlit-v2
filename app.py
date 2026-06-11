@@ -17,7 +17,7 @@ from pages_content.touchpoint import render_touchpoint
 
 
 st.set_page_config(
-    page_title="Bank XYZ CX Dashboard",
+    page_title="Bank XYZ CX360",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",

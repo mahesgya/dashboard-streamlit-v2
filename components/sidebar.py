@@ -132,10 +132,10 @@ def apply_filters(df, page):
 
 NAV_ITEMS = {
     "▦  Overview": "Overview",
-    "♙  Respondent Profile": "Respondent Profile",
+    "♙  Customer Respondent": "Respondent Profile",
     "▮  Usage & Competitor": "Usage & Competitor",
-    "▥  Branch": "Branch",
-    "☆  Touchpoint": "Touchpoint",
+    "▥  Branch Experience": "Branch",
+    "☆  Touchpoint Experience": "Touchpoint",
 }
 
 
@@ -143,7 +143,7 @@ def render_sidebar(df):
     with st.sidebar:
         st.markdown(
             """
-            <div class="sidebar-title">Bank XYZ<br>CX Dashboard</div>
+            <div class="sidebar-title">Bank XYZ<br>CX360</div>
             <div class="sidebar-caption">XYZ vs Competitor</div>
             """,
             unsafe_allow_html=True,
