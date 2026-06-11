@@ -1,15 +1,14 @@
 """Page 2 — Respondent Profile.
 
 Who the respondents are (demographics & banking behaviour) and a sanity check on
-sample representativeness — the foundation of trust for every other page.
+sample representativeness. All distribution bars are shown as share of respondents.
 """
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
-from components.cards import metric_card
+from components.cards import kpi_card
 from components.theme import PALETTE, PALETTE_CONTINUOUS, ICON, mi, load_icon_font, style_treemap, base_layout
 from utils import labels as L
 from pages_content._common import page_header, spacer, chart_card, plot, empty_state
@@ -22,7 +21,6 @@ def _counts(df, col):
 
 
 def _multi_counts(df, col, sep=";"):
-    """Split multi-response cells on `sep` and count each option."""
     if col not in df.columns:
         return pd.Series(dtype=int)
     s = df[col].dropna().astype(str)
@@ -34,35 +32,23 @@ def _multi_counts(df, col, sep=";"):
 
 def render_kpis(df):
     total = len(df)
-
     avg_age = pd.to_numeric(df.get("S2_1_num"), errors="coerce").mean() if "S2_1_num" in df.columns else None
     avg_age_txt = f"{avg_age:.1f}" if pd.notna(avg_age) else "-"
 
-    if "S3" in df.columns and total:
-        existing = df["S3"].astype(str).str.lower().str.startswith("ya").mean() * 100
-        existing_txt = f"{existing:.1f}%"
-    else:
-        existing_txt = "-"
-
-    if "P1" in df.columns and total:
-        married = (df["P1"].astype(str) == "Menikah").mean() * 100
-        married_txt = f"{married:.1f}%"
-    else:
-        married_txt = "-"
+    existing_txt = (f"{df['S3'].astype(str).str.lower().str.startswith('ya').mean()*100:.1f}%"
+                    if "S3" in df.columns and total else "-")
+    married_txt = (f"{(df['P1'].astype(str)=='Menikah').mean()*100:.1f}%"
+                   if "P1" in df.columns and total else "-")
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
-        metric_card(mi("groups", ICON["dark"], 16) + "Total Respondents", f"{total:,}",
-                    sub_text="survey participants", accent=ICON["dark"])
+        kpi_card("groups", "Total Respondents", f"{total:,}", sub_text="survey participants", accent=ICON["dark"])
     with k2:
-        metric_card(mi("cake", ICON["mid"], 16) + "Avg. Age", avg_age_txt,
-                    sub_text="mean age (years)", accent=ICON["mid"])
+        kpi_card("cake", "Avg. Age", avg_age_txt, sub_text="mean age (years)", accent=ICON["mid"])
     with k3:
-        metric_card(mi("verified_user", ICON["darkest"], 16) + "Existing Customers", existing_txt,
-                    sub_text="share of respondents", accent=ICON["darkest"])
+        kpi_card("verified_user", "Existing Customers", existing_txt, sub_text="share of respondents", accent=ICON["darkest"])
     with k4:
-        metric_card(mi("favorite", ICON["soft"], 16) + "Married", married_txt,
-                    sub_text="share of respondents", accent=ICON["soft"])
+        kpi_card("favorite", "Married", married_txt, sub_text="share of respondents", accent=ICON["soft"])
 
 
 def _donut(box, counts, total, center_label="Total"):
@@ -82,23 +68,23 @@ def _donut(box, counts, total, center_label="Total"):
 
 
 def render_age(df):
-    box = chart_card("Age Distribution", "Number of respondents by age group", icon=("cake", "dark", 18))
+    box = chart_card("Age Distribution", "Share of respondents by age group", icon=("cake", "dark", 18))
     counts = _counts(df, "S2_2")
     if counts.empty:
         empty_state(box); return
+    total = len(df)
     data = counts.reset_index()
     data.columns = ["Age Group", "Count"]
     data["Age Group"] = data["Age Group"].map(L.clean_age)
+    data["pct"] = (data["Count"] / total * 100).round(1)
     data["_sort"] = data["Age Group"].str.extract(r"(\d+)").astype(float)
     data = data.sort_values("_sort")
-    total = len(df)
-    data["pct"] = (data["Count"] / total * 100).round(1)
-    fig = px.bar(data, x="Age Group", y="Count", text="pct", color="Age Group",
+    fig = px.bar(data, x="Age Group", y="pct", text="pct", color="Age Group",
                  color_discrete_sequence=PALETTE, custom_data=["Count"])
     fig.update_traces(textposition="outside", cliponaxis=False, texttemplate="%{text}%",
-                      hovertemplate="<b>%{x}</b><br>Respondents: %{customdata[0]}<extra></extra>")
+                      hovertemplate="<b>%{x}</b><br>%{y}% (%{customdata[0]} resp.)<extra></extra>")
     fig = base_layout(fig, height=330, margin=dict(l=10, r=10, t=40, b=50))
-    fig.update_yaxes(title=None, range=[0, data["Count"].max() * 1.25])
+    fig.update_yaxes(title="% of respondents", range=[0, data["pct"].max() * 1.25], ticksuffix="%")
     fig.update_xaxes(title="Age group (years)")
     plot(box, fig)
 
@@ -109,8 +95,7 @@ def render_gender(df):
     if counts.empty:
         empty_state(box); return
     counts.index = counts.index.map(lambda x: L.GENDER_MAP.get(x, x))
-    counts = counts.groupby(level=0).sum()
-    _donut(box, counts, len(df))
+    _donut(box, counts.groupby(level=0).sum(), len(df))
 
 
 def render_marital(df):
@@ -119,11 +104,10 @@ def render_marital(df):
     if counts.empty:
         empty_state(box); return
     counts.index = counts.index.map(lambda x: L.MARITAL_MAP.get(x, x))
-    counts = counts.groupby(level=0).sum()
-    _donut(box, counts, len(df))
+    _donut(box, counts.groupby(level=0).sum(), len(df))
 
 
-def _hbar(box, counts, label_map=None, top_n=10, x_title="Respondents"):
+def _hbar(box, counts, total, label_map=None, top_n=10):
     if counts.empty:
         empty_state(box); return
     if label_map:
@@ -132,23 +116,25 @@ def _hbar(box, counts, label_map=None, top_n=10, x_title="Respondents"):
     counts = counts.head(top_n).sort_values(ascending=True)
     data = counts.reset_index()
     data.columns = ["Category", "Count"]
-    fig = px.bar(data, x="Count", y="Category", orientation="h", color="Count",
-                 color_continuous_scale=PALETTE_CONTINUOUS)
-    fig.update_traces(hovertemplate="<b>%{y}</b><br>Respondents: %{x}<extra></extra>")
-    fig = base_layout(fig, height=max(300, 30 * len(data) + 60), margin=dict(l=10, r=30, t=30, b=30))
+    data["pct"] = (data["Count"] / total * 100).round(1)
+    fig = px.bar(data, x="pct", y="Category", orientation="h", text="pct",
+                 color="pct", color_continuous_scale=PALETTE_CONTINUOUS, custom_data=["Count"])
+    fig.update_traces(textposition="outside", cliponaxis=False, texttemplate="%{text}%",
+                      hovertemplate="<b>%{y}</b><br>%{x}% (%{customdata[0]} resp.)<extra></extra>")
+    fig = base_layout(fig, height=max(300, 30 * len(data) + 60), margin=dict(l=10, r=45, t=30, b=30))
     fig.update_layout(coloraxis_showscale=False)
-    fig.update_xaxes(title=x_title)
+    fig.update_xaxes(title="% of respondents", range=[0, data["pct"].max() * 1.2], ticksuffix="%")
     fig.update_yaxes(title=None)
     plot(box, fig)
 
 
 def render_education(df):
-    box = chart_card("Highest Education", "Number of respondents", icon=("school", "mid", 18))
-    _hbar(box, _counts(df, "P3"), label_map=L.EDUCATION_MAP)
+    box = chart_card("Highest Education", "Share of respondents", icon=("school", "mid", 18))
+    _hbar(box, _counts(df, "P3"), len(df), label_map=L.EDUCATION_MAP)
 
 
 def render_occupation(df):
-    box = chart_card("Occupation", "Number of respondents", icon=("work", "soft", 18))
+    box = chart_card("Occupation", "Share of respondents", icon=("work", "soft", 18))
     counts = _counts(df, "P4")
     if counts.empty:
         empty_state(box); return
@@ -168,19 +154,18 @@ def render_occupation(df):
 
 
 def render_other_banks(df):
-    box = chart_card("Other Banks Used", "Multi-response — banks active alongside Bank XYZ",
+    box = chart_card("Other Banks Used", "Share of respondents using each bank alongside Bank XYZ",
                      icon=("account_balance", "dark", 18))
     counts = _multi_counts(df, "A1A")
     counts = counts[counts.index != "Bank XYZ"]
-    _hbar(box, counts, top_n=8, x_title="Respondents")
+    _hbar(box, counts, len(df), top_n=8)
 
 
 def render_motivation(df):
-    box = chart_card("Account Opening Motivation", "Multi-response (A2)", icon=("savings", "teal", 18))
+    box = chart_card("Account Opening Motivation", "Share of respondents (A2)", icon=("savings", "teal", 18))
     counts = _multi_counts(df, "A2")
     if counts.empty:
         empty_state(box); return
-    # Shorten the long Indonesian options for readability.
     short = {
         "Untuk menabung": "To save money",
         "Untuk menerima gaji dari tempat saya bekerja": "To receive salary",
@@ -189,8 +174,7 @@ def render_motivation(df):
         "Untuk menunjang bisnis saya (menerima transfer dana dari klien/konsumen saya)": "To support my business",
     }
     counts.index = counts.index.map(lambda x: short.get(x, (x[:40] + "…") if len(x) > 42 else x))
-    counts = counts.groupby(level=0).sum()
-    _hbar(box, counts, top_n=8, x_title="Respondents")
+    _hbar(box, counts.groupby(level=0).sum(), len(df), top_n=8)
 
 
 def render_insights(df):
@@ -208,7 +192,7 @@ def render_insights(df):
                    display:grid; grid-template-columns:repeat(2, 1fr); gap:10px 36px;">
             <li>{mi("cake", ICON["dark"])}The most common age group is <b>{top_age}</b>.</li>
             <li>{mi("wc", ICON["mid"])}The largest gender group is <b>{top_gender}</b>.</li>
-            <li>{mi("account_balance", ICON["teal"])}The "other banks used" chart reveals the most common competitors held alongside Bank XYZ.</li>
+            <li>{mi("account_balance", ICON["teal"])}The "other banks used" chart reveals the competitors held alongside Bank XYZ.</li>
             <li>{mi("savings", ICON["soft"])}Saving and salary receipt dominate the reasons for opening an account.</li>
         </ul>
     </div>
