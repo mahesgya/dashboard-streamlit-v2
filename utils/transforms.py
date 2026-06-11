@@ -157,6 +157,91 @@ def branch_attribute_matrix(df, cols, labels, branch_col="CABANG", min_n=5, top_
     return matrix.dropna(how="all")
 
 
+def touchpoint_xyz_columns(df, prefix, paired, labels):
+    """XYZ-side rating columns of a touchpoint group, excluding overall rows."""
+    out = []
+    for c in group_columns(df, prefix):
+        attr = clean_label(labels.get(c, c))
+        if _is_overall(attr):
+            continue
+        side = _benchmark_side(labels.get(c, ""))
+        if paired:
+            if side == "XYZ":
+                out.append(c)
+        else:
+            out.append(c)
+    return out
+
+
+def touchpoint_overall(df, labels, touchpoints, mode="Mean"):
+    """Per-touchpoint overall XYZ (and competitor where it exists).
+
+    `touchpoints` is the ordered {name: {prefix, paired}} config — used as the
+    single source of truth so every touchpoint visual shows the same set.
+    Returns DataFrame[attribute, xyz, competitor, gap].
+    """
+    rows = []
+    for name, cfg in touchpoints.items():
+        if cfg["paired"]:
+            ps = get_paired_scores(df, cfg["prefix"], labels, mode)
+            xyz = round(ps["xyz"].mean(), 2) if not ps.empty else np.nan
+            comp = round(ps["competitor"].mean(), 2) if not ps.empty else np.nan
+        else:
+            cols = touchpoint_xyz_columns(df, cfg["prefix"], False, labels)
+            xyz = aggregate_series(df[cols].stack(), mode) if cols else np.nan
+            comp = np.nan
+        gap = (xyz - comp) if (pd.notna(xyz) and pd.notna(comp)) else np.nan
+        rows.append({"attribute": name, "xyz": xyz, "competitor": comp, "gap": gap})
+    return pd.DataFrame(rows)
+
+
+def _branches_with_min(df, branch_col, min_n, top_branches):
+    sizes = df[branch_col].dropna().astype(str).value_counts()
+    branches = [b for b, n in sizes.items() if n >= min_n]
+    if top_branches:
+        branches = branches[:top_branches]
+    return branches
+
+
+def branch_metric_table(df, labels, mode="Mean", min_n=1, top_branches=None, branch_col="CABANG"):
+    """Per-branch outcome scorecard: NPS, CSI, overall Facility score and n."""
+    if branch_col not in df.columns:
+        return pd.DataFrame()
+    fac_cols = touchpoint_xyz_columns(df, "T_KC2", True, labels)
+    rows = []
+    for b in _branches_with_min(df, branch_col, min_n, top_branches):
+        sub = df[df[branch_col].astype(str) == b]
+        rows.append({
+            "branch": b,
+            "city": sub["KABKOTA"].dropna().astype(str).iloc[0] if "KABKOTA" in sub.columns and not sub["KABKOTA"].dropna().empty else "",
+            "province": sub["PROV"].dropna().astype(str).iloc[0] if "PROV" in sub.columns and not sub["PROV"].dropna().empty else "",
+            "NPS": nps(sub["G1A_num"]) if "G1A_num" in sub.columns else None,
+            "CSI": aggregate_series(sub["E1A_num"], mode) if "E1A_num" in sub.columns else None,
+            "Facility": aggregate_series(sub[fac_cols].stack(), mode) if fac_cols else None,
+            "n": len(sub),
+        })
+    return pd.DataFrame(rows)
+
+
+def branch_touchpoint_matrix(df, labels, touchpoints, mode="Mean", min_n=8, top_branches=20, branch_col="CABANG"):
+    """Branch × 6-touchpoint average score matrix (rows = branches)."""
+    if branch_col not in df.columns:
+        return pd.DataFrame()
+    tp_cols = {
+        name: touchpoint_xyz_columns(df, cfg["prefix"], cfg["paired"], labels)
+        for name, cfg in touchpoints.items()
+    }
+    data = {}
+    for b in _branches_with_min(df, branch_col, min_n, top_branches):
+        sub = df[df[branch_col].astype(str) == b]
+        data[b] = {
+            name: aggregate_series(sub[cols].stack(), mode) if cols else np.nan
+            for name, cols in tp_cols.items()
+        }
+    matrix = pd.DataFrame(data).T
+    return matrix.dropna(how="all")
+
+
 def get_single_scores(df, prefix, labels, mode="Mean", drop_overall=False):
     """Return DataFrame[attribute, score] for a single-series group (no competitor)."""
     records = []
