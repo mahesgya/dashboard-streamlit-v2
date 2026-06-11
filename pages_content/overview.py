@@ -4,6 +4,7 @@ Executive summary of Bank XYZ vs Competitor on outcome KPIs in one screen, plus 
 branch-level map (click a branch to see its NPS and CSI).
 """
 
+import pandas as pd
 import streamlit as st
 
 from components.cards import kpi_card, comparison_card
@@ -41,13 +42,41 @@ def render_kpis(df, mode, overall):
                  sub_text="ahead of competitor", accent=ICON["soft"])
 
 
+def _branch_popup_html(city, province, metric, sub):
+    """HTML popup: city header + a list of every branch with its NPS and CSI."""
+    rows = ""
+    for _, b in sub.iterrows():
+        csi = "–" if b["CSI"] is None or pd.isna(b["CSI"]) else f"{b['CSI']:g}"
+        nps_v = "–" if b["NPS"] is None or pd.isna(b["NPS"]) else f"{b['NPS']:g}"
+        rows += (
+            f"<tr><td style='padding:2px 8px 2px 0;'>{b['branch']}</td>"
+            f"<td style='padding:2px 8px;text-align:right;color:#0A4174;font-weight:700;'>{nps_v}</td>"
+            f"<td style='padding:2px 0;text-align:right;color:#0f766e;font-weight:700;'>{csi}</td></tr>"
+        )
+    return (
+        f"<div style='font-family:inherit;font-size:12px;max-height:240px;overflow:auto;'>"
+        f"<div style='font-weight:800;font-size:13px;margin-bottom:2px;'>{city}</div>"
+        f"<div style='color:#64748b;margin-bottom:6px;'>{province} · avg {metric}</div>"
+        f"<table style='border-collapse:collapse;'>"
+        f"<tr style='border-bottom:1px solid #e5e7eb;color:#64748b;'>"
+        f"<th style='text-align:left;padding-right:8px;'>Branch</th>"
+        f"<th style='text-align:right;padding:0 8px;'>NPS</th>"
+        f"<th style='text-align:right;'>CSI</th></tr>{rows}</table></div>"
+    )
+
+
 def render_map(df, labels, mode):
     box = st.container(border=True)
     box.markdown(
         '<div class="chart-title">' + mi("map", ICON["dark"], 18) +
-        "Branch Map — NPS &amp; CSI</div>", unsafe_allow_html=True)
+        "Regional Map — NPS &amp; CSI by City/Regency</div>", unsafe_allow_html=True)
+
+    # Choose which metric colours the regions.
+    color_by = box.radio("Colour regions by", ["NPS", "CSI"], horizontal=True,
+                         key="map_color_by", label_visibility="collapsed")
     box.markdown(
-        '<div class="chart-subtitle">Each marker is a branch (colour = NPS). Click a marker for its scores.</div>',
+        f'<div class="chart-subtitle">Each region (kabupaten/kota) is shaded by its average '
+        f'<b>{color_by}</b>. Click a region to list all its branches with NPS &amp; CSI.</div>',
         unsafe_allow_html=True)
 
     try:
@@ -55,52 +84,64 @@ def render_map(df, labels, mode):
         import branca.colormap as cm
         from streamlit_folium import st_folium
     except Exception:
-        box.info("Install `folium` and `streamlit-folium` to view the interactive branch map.")
+        box.info("Install `folium` and `streamlit-folium` to view the interactive map.")
         return
 
-    table = T.branch_metric_table(df, labels, mode, min_n=1)
-    if table.empty:
+    city_tbl = T.city_metric_table(df, labels, mode)
+    branch_tbl = T.branch_metric_table(df, labels, mode, min_n=1)
+    if city_tbl.empty:
         empty_state(box); return
 
-    unit = T.metric_suffix(mode)
-    points = []
-    for _, r in table.iterrows():
-        coord = geo.branch_coord(r["branch"], r["city"])
-        if coord is None or r["NPS"] is None:
-            continue
-        points.append((coord, r))
+    unit = T.metric_suffix(mode) if color_by == "CSI" else ""
+    values = {r["city"]: r[color_by] for _, r in city_tbl.iterrows() if r[color_by] is not None and pd.notna(r[color_by])}
+    if not values:
+        empty_state(box, "No regional data for the current filters."); return
 
-    if not points:
-        empty_state(box, "No mappable branches for the current filters."); return
-
-    nps_vals = [r["NPS"] for _, r in points]
     cmap = cm.LinearColormap(
         colors=["#BDD8E9", "#7BBDE8", "#49769F", "#0A4174", "#001D39"],
-        vmin=min(nps_vals), vmax=max(nps_vals), caption="NPS",
+        vmin=min(values.values()), vmax=max(values.values()),
+        caption=f"Average {color_by}{(' ' + unit) if unit else ''}",
     )
+
+    geojson = geo.load_kabkota_geojson()
+    present = set(df["KABKOTA"].dropna().astype(str).unique()) if "KABKOTA" in df.columns else set()
+    feats = [f for f in geojson["features"] if f["properties"]["KABKOTA"] in present] or geojson["features"]
 
     m = folium.Map(location=list(geo.MAP_CENTER), zoom_start=geo.MAP_ZOOM,
                    tiles="cartodbpositron", control_scale=False)
 
-    for (lat, lon), r in points:
-        csi = f"{r['CSI']}{unit}" if r["CSI"] is not None else "–"
-        html = (
-            f"<div style='font-family:inherit;font-size:12px;'>"
-            f"<b>{r['branch']}</b><br>{r['city']}, {r['province']}<br>"
-            f"<span style='color:#0A4174;font-weight:700;'>NPS: {r['NPS']}</span><br>"
-            f"<span style='color:#0f766e;font-weight:700;'>CSI: {csi}</span><br>"
-            f"<span style='color:#64748b;'>n = {r['n']}</span></div>"
-        )
-        folium.CircleMarker(
-            location=[lat, lon], radius=6, color="white", weight=1,
-            fill=True, fill_color=cmap(r["NPS"]), fill_opacity=0.92,
-            tooltip=r["branch"], popup=folium.Popup(html, max_width=240),
+    info = {r["city"]: r for _, r in city_tbl.iterrows()}
+    for feat in feats:
+        city = feat["properties"]["KABKOTA"]
+        val = values.get(city)
+        meta = info.get(city)
+        if meta is not None:
+            metric_txt = (f"NPS {meta['NPS']:g}" if color_by == "NPS"
+                          else f"CSI {meta['CSI']:g}{unit}") if val is not None else "no data"
+            sub = branch_tbl[branch_tbl["city"] == city] if not branch_tbl.empty else branch_tbl
+            popup = folium.Popup(_branch_popup_html(city, meta["province"], metric_txt, sub), max_width=320)
+            tip = f"{city}: {metric_txt} ({meta['n']} resp.)"
+        else:
+            popup, tip = None, city
+
+        def style(_feature, v=val):
+            return {
+                "fillColor": cmap(v) if v is not None else "#eef2f7",
+                "color": "white", "weight": 1,
+                "fillOpacity": 0.85 if v is not None else 0.4,
+            }
+
+        folium.GeoJson(
+            feat,
+            style_function=style,
+            highlight_function=lambda x: {"weight": 2.5, "color": "#0A4174", "fillOpacity": 0.95},
+            tooltip=tip, popup=popup,
         ).add_to(m)
 
     cmap.add_to(m)
     with box:
-        st_folium(m, height=470, use_container_width=True, returned_objects=[])
-    caption(box, f"{len(points)} branches mapped at city level. Marker colour scales with branch NPS.")
+        st_folium(m, height=480, use_container_width=True, returned_objects=[])
+    caption(box, f"{len(values)} regions shaded by average {color_by}. Grey = no data after filters.")
 
 
 def render_insights(df, overall):
