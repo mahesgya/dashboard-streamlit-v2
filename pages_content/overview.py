@@ -5,14 +5,15 @@ branch-level map (click a branch to see its NPS and CSI).
 """
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from components.cards import kpi_card, comparison_card
-from components.theme import ICON, mi, load_icon_font
+from components.theme import ICON, PALETTE_CONTINUOUS, mi, load_icon_font, base_layout
 from utils import transforms as T
 from utils.labels import TOUCHPOINTS
 from utils import geo
-from pages_content._common import page_header, spacer, caption, empty_state
+from pages_content._common import page_header, spacer, chart_card, plot, caption, empty_state
 
 
 def render_kpis(df, mode, overall):
@@ -36,10 +37,13 @@ def render_kpis(df, mode, overall):
     with k4:
         comparison_card("loyalty", "Retention (Bank XYZ)", ret_xyz, ret_comp, unit=unit, accent=ICON["teal"])
     with k5:
-        paired = overall.dropna(subset=["gap"])
-        wins = int((paired["gap"] > 0).sum()) if not paired.empty else 0
-        kpi_card("emoji_events", "Touchpoints Won", f"{wins} / {len(paired)}",
-                 sub_text="ahead of competitor", accent=ICON["soft"])
+        # All 6 touchpoints have a Bank XYZ score; only 4 have a competitor
+        # benchmark, so an "avg score across 6" reads cleaner than a win count.
+        tp = overall["xyz"].dropna()
+        avg_tp = round(tp.mean(), 2) if not tp.empty else None
+        kpi_card("insights", "Avg. Touchpoint Score",
+                 f"{avg_tp}{unit}" if avg_tp is not None else "-",
+                 sub_text=f"across {len(tp)} touchpoints", accent=ICON["soft"])
 
 
 def _branch_popup_html(city, province, metric, sub):
@@ -144,6 +148,27 @@ def render_map(df, labels, mode):
     caption(box, f"{len(values)} regions shaded by average {color_by}. Grey = no data after filters.")
 
 
+def render_touchpoint_scores(overall, mode):
+    box = chart_card("Touchpoint Performance — Bank XYZ",
+                     f"Overall {T.metric_axis_title(mode).lower()} across all branches",
+                     icon=("insights", "dark", 18))
+    data = overall[["attribute", "xyz"]].dropna(subset=["xyz"]).sort_values("xyz")
+    if data.empty:
+        empty_state(box); return
+    fmt = "%{x:.0f}%" if mode == "Top-2-Box" else "%{x:.2f}"
+    fig = px.bar(data, x="xyz", y="attribute", orientation="h", text="xyz",
+                 color="xyz", color_continuous_scale=PALETTE_CONTINUOUS)
+    fig.update_traces(texttemplate=fmt, textposition="outside", cliponaxis=False,
+                      hovertemplate="<b>%{y}</b><br>Bank XYZ: " + fmt + "<extra></extra>")
+    fig = base_layout(fig, height=330, margin=dict(l=10, r=55, t=20, b=35))
+    fig.update_layout(coloraxis_showscale=False)
+    fig.update_xaxes(title=T.metric_axis_title(mode),
+                     range=[0, 100 if mode == "Top-2-Box" else 6])
+    fig.update_yaxes(title=None)
+    plot(box, fig)
+    caption(box, "Mean Bank XYZ score for each of the six touchpoints across all selected branches.")
+
+
 def render_insights(df, overall):
     nps_xyz = T.nps(df["G1A_num"]) if "G1A_num" in df.columns else None
     nps_comp = T.nps(df["G1C_num"]) if "G1C_num" in df.columns else None
@@ -186,8 +211,9 @@ def render_overview(df, labels, mode):
     spacer(28)
     render_map(df, labels, mode)
 
-    # NOTE: the replacement chart requested ("ganti sama chart ini") goes here,
-    # directly below the full-width map. Awaiting the chart spec/attachment.
+    # Overall touchpoint assessment for Bank XYZ branches, below the map.
+    spacer()
+    render_touchpoint_scores(overall, mode)
 
     spacer()
     render_insights(df, overall)
