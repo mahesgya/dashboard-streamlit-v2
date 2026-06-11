@@ -1,54 +1,8 @@
 import streamlit as st
 
-
-# =========================
-# Filter label maps & ordering (raw survey value -> English label)
-# =========================
-TENURE_LABEL_MAP = {
-    "1 bulan s/d 3 bulan": "1–3 months",
-    "3 bulan s/d 11 bulan": "3–11 months",
-    "1 tahun s/d 2 tahun 11 bulan": "1–2 years",
-    "3 tahun s/d 4 tahun 11 bulan": "3–4 years",
-    "5 tahun atau lebih": "≥ 5 years",
-}
-
-TENURE_ORDER = [
-    "1 bulan s/d 3 bulan",
-    "3 bulan s/d 11 bulan",
-    "1 tahun s/d 2 tahun 11 bulan",
-    "3 tahun s/d 4 tahun 11 bulan",
-    "5 tahun atau lebih",
-]
-
-FREQUENCY_LABEL_MAP = {
-    "1 minggu 2 kali atau lebih": "≥ 2× a week",
-    "1 minggu sekali": "Once a week",
-    "2 minggu sekali": "Once every 2 weeks",
-    "1 bulan sekali": "Once a month",
-}
-
-FREQUENCY_ORDER = [
-    "1 minggu 2 kali atau lebih",
-    "1 minggu sekali",
-    "2 minggu sekali",
-    "1 bulan sekali",
-]
-
-GENDER_LABEL_MAP = {
-    "Pria": "Male",
-    "Laki-laki": "Male",
-    "Wanita": "Female",
-    "Perempuan": "Female",
-}
-
-
-def clean_age_label(value):
-    """Translate the Indonesian age-group labels (only the word 'tahun')."""
-    value = str(value)
-    value = value.replace(" tahun ke atas", "+ years")
-    value = value.replace(" tahun dan ke atas", "+ years")
-    value = value.replace(" tahun", " years")
-    return value
+from utils.labels import (
+    GENDER_MAP, TENURE_MAP, TENURE_ORDER_RAW, FREQUENCY_MAP, FREQUENCY_ORDER_RAW, clean_age,
+)
 
 
 # dataframe column -> session_state key holding the current selection
@@ -62,93 +16,114 @@ FILTER_KEYS = {
     "S7": "f_freq",
 }
 
-# How the aggregate metric is computed across the whole app
+GEO_LEVELS = ["PROV", "KABKOTA", "CABANG"]
+
+# Per-page filter context (general revision: filters tailored per page).
+PAGE_FILTERS = {
+    "Overview": ["PROV", "KABKOTA", "CABANG"],
+    "Respondent Profile": ["PROV", "S1", "S2_2", "S4", "S7"],
+    "Usage & Competitor": ["PROV", "KABKOTA", "S1", "S2_2"],
+    "Branch": ["PROV", "KABKOTA", "CABANG"],
+    "Touchpoint": ["PROV", "CABANG", "S1", "S2_2"],
+}
+
+FILTER_META = {
+    "PROV": dict(label="Province"),
+    "KABKOTA": dict(label="City / Regency"),
+    "CABANG": dict(label="Branch"),
+    "S1": dict(label="Gender", label_map=GENDER_MAP),
+    "S2_2": dict(label="Age Group", transform=clean_age),
+    "S4": dict(label="Length of Relationship", label_map=TENURE_MAP, order=TENURE_ORDER_RAW),
+    "S7": dict(label="Transaction Frequency", label_map=FREQUENCY_MAP, order=FREQUENCY_ORDER_RAW),
+}
+
 METRIC_MODE_KEY = "metric_mode"
 
 
 def get_metric_mode():
-    """Return the active aggregate mode: 'Mean' (default) or 'Top-2-Box'."""
     return st.session_state.get(METRIC_MODE_KEY, "Mean")
 
 
-def sidebar_multiselect(label, col, df, key, label_map=None, custom_order=None, transform=None):
-    if col not in df.columns:
-        return
+def _geo_scope_df(df, target_col):
+    """Apply the geo selections of levels ABOVE `target_col` (cascade)."""
+    out = df
+    for col in GEO_LEVELS:
+        if col == target_col:
+            break
+        sel = st.session_state.get(FILTER_KEYS[col], [])
+        if sel and col in out.columns:
+            out = out[out[col].astype(str).isin(sel)]
+    return out
 
-    options = df[col].dropna().astype(str).unique().tolist()
 
-    if custom_order:
-        order_dict = {value: i for i, value in enumerate(custom_order)}
-        options = sorted(options, key=lambda x: order_dict.get(x, 999))
+def _options_for(df, col):
+    meta = FILTER_META[col]
+    scope = _geo_scope_df(df, col) if col in GEO_LEVELS else df
+    if col not in scope.columns:
+        return []
+    options = scope[col].dropna().astype(str)
+    options = options[options.str.strip() != ""].unique().tolist()
+    order = meta.get("order")
+    if order:
+        rank = {v: i for i, v in enumerate(order)}
+        options = sorted(options, key=lambda x: rank.get(x, 999))
     else:
         options = sorted(options)
+    return options
 
-    def format_label(value):
-        if label_map and value in label_map:
-            return label_map[value]
-        if transform:
-            return transform(value)
+
+def _render_filter(df, col):
+    meta = FILTER_META[col]
+    key = FILTER_KEYS[col]
+    options = _options_for(df, col)
+
+    # Prune any stored selection that is no longer valid after a cascade change.
+    current = [v for v in st.session_state.get(key, []) if v in options]
+    st.session_state[key] = current
+
+    def fmt(value):
+        if meta.get("label_map") and value in meta["label_map"]:
+            return meta["label_map"][value]
+        if meta.get("transform"):
+            return meta["transform"](value)
         return value
 
-    st.multiselect(
-        label,
-        options=options,
-        key=key,
-        placeholder="All",
-        format_func=format_label,
-    )
+    st.multiselect(meta["label"], options=options, key=key, placeholder="All", format_func=fmt)
 
 
-def apply_filters(df, filters):
-    filtered_df = df.copy()
-    for col, selected_values in filters.items():
-        if col in filtered_df.columns and selected_values:
-            filtered_df = filtered_df[filtered_df[col].astype(str).isin(selected_values)]
-    return filtered_df
-
-
-def _reset_filters():
-    for k in FILTER_KEYS.values():
-        st.session_state[k] = []
+def _reset_filters(page):
+    for col in PAGE_FILTERS.get(page, []):
+        st.session_state[FILTER_KEYS[col]] = []
 
 
 @st.dialog("Filters")
-def filter_dialog(df):
-    sidebar_multiselect("Province", "PROV", df, FILTER_KEYS["PROV"])
-    sidebar_multiselect("City / Regency", "KABKOTA", df, FILTER_KEYS["KABKOTA"])
-    sidebar_multiselect("Branch", "CABANG", df, FILTER_KEYS["CABANG"])
-    sidebar_multiselect("Gender", "S1", df, FILTER_KEYS["S1"], label_map=GENDER_LABEL_MAP)
-    sidebar_multiselect("Age Group", "S2_2", df, FILTER_KEYS["S2_2"], transform=clean_age_label)
-    sidebar_multiselect(
-        "Length of Relationship",
-        "S4",
-        df,
-        FILTER_KEYS["S4"],
-        label_map=TENURE_LABEL_MAP,
-        custom_order=TENURE_ORDER,
-    )
-    sidebar_multiselect(
-        "Transaction Frequency",
-        "S7",
-        df,
-        FILTER_KEYS["S7"],
-        label_map=FREQUENCY_LABEL_MAP,
-        custom_order=FREQUENCY_ORDER,
-    )
+def filter_dialog(df, page):
+    for col in PAGE_FILTERS.get(page, []):
+        _render_filter(df, col)
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
     c1, c2 = st.columns(2)
     with c1:
-        st.button("Reset", use_container_width=True, on_click=_reset_filters)
+        st.button("Reset", use_container_width=True, on_click=_reset_filters, args=(page,))
     with c2:
         if st.button("Apply", use_container_width=True, type="primary"):
             st.rerun()
 
 
+def apply_filters(df, page):
+    """Apply only the filters relevant to the current page."""
+    out = df.copy()
+    for col in PAGE_FILTERS.get(page, []):
+        sel = st.session_state.get(FILTER_KEYS[col], [])
+        if sel and col in out.columns:
+            out = out[out[col].astype(str).isin(sel)]
+    return out
+
+
 NAV_ITEMS = {
     "▦  Overview": "Overview",
     "♙  Respondent Profile": "Respondent Profile",
+    "▮  Usage & Competitor": "Usage & Competitor",
     "▥  Branch": "Branch",
     "☆  Touchpoint": "Touchpoint",
 }
@@ -164,16 +139,11 @@ def render_sidebar(df):
             unsafe_allow_html=True,
         )
 
-        page_label = st.radio(
-            "Navigation",
-            list(NAV_ITEMS.keys()),
-            label_visibility="collapsed",
-        )
+        page_label = st.radio("Navigation", list(NAV_ITEMS.keys()), label_visibility="collapsed")
         page = NAV_ITEMS[page_label]
 
         st.markdown("<hr>", unsafe_allow_html=True)
 
-        # Aggregate metric toggle — applies to every comparison chart.
         st.markdown("**Aggregate metric**")
         st.segmented_control(
             "Aggregate metric",
@@ -183,14 +153,13 @@ def render_sidebar(df):
             label_visibility="collapsed",
         )
 
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-        # Filters open in a centered modal (keeps the sidebar compact).
-        active = sum(1 for k in FILTER_KEYS.values() if st.session_state.get(k))
+        page_filter_cols = PAGE_FILTERS.get(page, [])
+        active = sum(1 for c in page_filter_cols if st.session_state.get(FILTER_KEYS[c]))
         btn_label = f"▤  Filters ({active})" if active else "▤  Filters"
-
         if st.button(btn_label, use_container_width=True):
-            filter_dialog(df)
+            filter_dialog(df, page)
 
         st.markdown(
             """
@@ -203,7 +172,16 @@ def render_sidebar(df):
             unsafe_allow_html=True,
         )
 
-    filters = {col: st.session_state.get(key, []) for col, key in FILTER_KEYS.items()}
-    filtered_df = apply_filters(df, filters)
+    filtered_df = apply_filters(df, page)
+    return page, filtered_df
 
-    return page, filtered_df, filters
+
+def render_inline_filter_chips(page):
+    """Optional: show active filters as a caption under the page header."""
+    chips = []
+    for col in PAGE_FILTERS.get(page, []):
+        sel = st.session_state.get(FILTER_KEYS[col], [])
+        if sel:
+            chips.append(f"{FILTER_META[col]['label']}: {', '.join(map(str, sel[:3]))}"
+                         + ("…" if len(sel) > 3 else ""))
+    return chips
