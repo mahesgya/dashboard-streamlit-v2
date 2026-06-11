@@ -9,7 +9,7 @@ import plotly.express as px
 import streamlit as st
 
 from components.cards import kpi_card
-from components.theme import XYZ_COLOR, COMP_COLOR, PALETTE_CONTINUOUS, ICON, mi, load_icon_font, base_layout
+from components.theme import XYZ_COLOR, COMP_COLOR, PALETTE, PALETTE_CONTINUOUS, ICON, mi, load_icon_font, base_layout
 from pages_content._common import page_header, spacer, chart_card, plot, empty_state
 
 
