@@ -14,6 +14,7 @@ from utils import charts
 from utils.data_loader import clean_label
 from utils.transforms import group_columns
 from utils.labels import translate, translate_df
+from components.heatmap import render_score_heatmap, render_scorecard_heatmap
 from pages_content._common import page_header, spacer, chart_card, plot, caption, empty_state
 
 BRANCH_PREFIX = "T_KC2"
@@ -53,12 +54,9 @@ def render_scorecard(df, labels, mode):
 
     table = table.sort_values("NPS", ascending=False)
     disp = table.set_index("branch")[["NPS", "CSI", "Facility", "n"]]
-    metric_fmt = "{:.1f}%" if mode == "Top-2-Box" else "{:.2f}"
-    fmts = {"NPS": "{:.0f}", "CSI": metric_fmt, "Facility": metric_fmt, "n": "{:.0f}"}
-    styler = charts.scorecard_styler(disp, fmts=fmts)
-    with box:
-        st.dataframe(styler, use_container_width=True, height=min(560, 42 * len(disp) + 48))
-    caption(box, "Branches with at least 8 responses; top 20 by NPS shown. Click column headers to sort.")
+    render_scorecard_heatmap(box, disp, mode=mode, row_header="Branch")
+    caption(box, "Branches with at least 8 responses; top 20 by NPS shown. "
+                 "Colour bands: CSI & Facility on the score scale, NPS on its own scale.")
 
 
 def render_heatmap(df, labels, mode):
@@ -73,7 +71,7 @@ def render_heatmap(df, labels, mode):
     if matrix.empty:
         empty_state(box, "Not enough per-branch responses for a heatmap."); return
     matrix.index = [translate(i) for i in matrix.index]
-    plot(box, charts.heatmap(matrix, mode=mode))
+    render_score_heatmap(box, matrix, mode=mode, row_header="Attribute")
     caption(box, "Rows = facility attributes, columns = branches (≥ 5 responses, 15 largest).")
 
 

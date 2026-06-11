@@ -15,6 +15,7 @@ from utils import transforms as T
 from utils import charts
 from utils.transforms import group_columns
 from utils.labels import translate, translate_df, TOUCHPOINTS, POSITIVE_EMOTIONS
+from components.heatmap import render_score_heatmap
 from pages_content._common import page_header, spacer, chart_card, plot, caption, empty_state
 
 
@@ -97,7 +98,7 @@ def render_branch_heatmap(df, labels, mode):
     matrix = T.branch_touchpoint_matrix(df, labels, TOUCHPOINTS, mode=mode, min_n=8, top_branches=20)
     if matrix.empty:
         empty_state(box, "Not enough per-branch responses for a heatmap."); return
-    plot(box, charts.heatmap(matrix, mode=mode))
+    render_score_heatmap(box, matrix, mode=mode, row_header="Branch")
     caption(box, "Rows = branches (≥ 8 responses, top 20), columns = the 6 touchpoints.")
 
 
