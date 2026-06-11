@@ -118,16 +118,18 @@ def diverging_bar(scores_df, mode="Mean", height=None, top_n=None):
     colors = [XYZ_COLOR if g >= 0 else NEGATIVE_COLOR for g in df["gap"]]
     unit = "pp" if mode == "Top-2-Box" else ""
 
+    fmt_gaps = [f"{g:+.2f}{unit}" for g in df["gap"]]
     fig = go.Figure(
         go.Bar(
             y=df["attribute"],
             x=df["gap"],
             orientation="h",
             marker_color=colors,
-            text=[f"{g:+.2f}{unit}" for g in df["gap"]],
+            text=fmt_gaps,
             textposition="outside",
             cliponaxis=False,
-            hovertemplate="<b>%{y}</b><br>Gap (XYZ vs competitor): %{x:+.2f}" + unit + "<extra></extra>",
+            customdata=fmt_gaps,
+            hovertemplate="<b>%{y}</b><br>Gap (XYZ vs competitor): %{customdata}<extra></extra>",
         )
     )
     fig = base_layout(fig, height=height, margin=dict(l=10, r=50, t=30, b=30))
