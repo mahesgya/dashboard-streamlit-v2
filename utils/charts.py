@@ -140,27 +140,35 @@ def diverging_bar(scores_df, mode="Mean", height=None, top_n=None):
 # ---------------------------------------------------------------------------
 # Radar — overall touchpoint comparison (2 layers)
 # ---------------------------------------------------------------------------
+def _closed(seq):
+    """Close a polar ring, converting NaN to None so gaps render cleanly."""
+    out = [None if pd.isna(v) else v for v in seq]
+    return out + [out[0]]
+
+
 def radar(df, mode="Mean", height=430):
-    """df: [attribute, xyz, competitor]."""
+    """df: [attribute, xyz, competitor]. Competitor may contain NaN (no benchmark)."""
     if df.empty:
         return _empty_fig()
     cats = df["attribute"].tolist()
     cats_closed = cats + [cats[0]]
 
     fig = go.Figure()
-    fig.add_trace(
-        go.Scatterpolar(
-            r=df["competitor"].tolist() + [df["competitor"].iloc[0]],
-            theta=cats_closed,
-            name="Competitor",
-            fill="toself",
-            fillcolor="rgba(156,183,204,0.25)",
-            line=dict(color=COMP_COLOR, width=2),
+    if "competitor" in df.columns and df["competitor"].notna().any():
+        fig.add_trace(
+            go.Scatterpolar(
+                r=_closed(df["competitor"].tolist()),
+                theta=cats_closed,
+                name="Competitor",
+                connectgaps=False,
+                fill="toself",
+                fillcolor="rgba(156,183,204,0.25)",
+                line=dict(color=COMP_COLOR, width=2),
+            )
         )
-    )
     fig.add_trace(
         go.Scatterpolar(
-            r=df["xyz"].tolist() + [df["xyz"].iloc[0]],
+            r=_closed(df["xyz"].tolist()),
             theta=cats_closed,
             name="Bank XYZ",
             fill="toself",
@@ -169,10 +177,8 @@ def radar(df, mode="Mean", height=430):
         )
     )
 
-    rng = [0, 100] if mode == "Top-2-Box" else [
-        max(0, float(np.nanmin([df["xyz"].min(), df["competitor"].min()])) - 0.4),
-        6,
-    ]
+    lo = float(np.nanmin([np.nanmin(df["xyz"].values), np.nanmin(df["competitor"].values)]))
+    rng = [0, 100] if mode == "Top-2-Box" else [max(0, lo - 0.4), 6]
     fig.update_layout(
         height=height,
         margin=dict(l=70, r=70, t=40, b=40),
@@ -375,6 +381,36 @@ def ipa_scatter(df, height=460):
     fig.update_xaxes(title="Performance (mean)")
     fig.update_yaxes(title="Importance (mean)")
     return fig
+
+
+def scorecard_styler(values, fmts=None):
+    """Return a pandas Styler colouring each column as a heatmap gradient.
+
+    `values`: DataFrame (index = row label, columns = metrics, mixed scales OK).
+    `fmts`: optional {column: python-format-string}. No matplotlib dependency —
+    colours come from the plotly palette.
+    """
+    fmts = fmts or {}
+
+    def _col_styles(s):
+        nums = pd.to_numeric(s, errors="coerce")
+        mn, mx = nums.min(), nums.max()
+        styles = []
+        for v in nums:
+            if pd.isna(v):
+                styles.append("")
+                continue
+            norm = (v - mn) / (mx - mn) if mx > mn else 0.5
+            color = px.colors.sample_colorscale(PALETTE_CONTINUOUS, [norm])[0]
+            txt = "#ffffff" if norm > 0.55 else "#0f172a"
+            styles.append(f"background-color:{color}; color:{txt}; font-weight:700;")
+        return styles
+
+    styler = values.style.apply(_col_styles, axis=0)
+    fmt_map = {c: fmts.get(c, "{:.2f}") for c in values.columns}
+    styler = styler.format({c: (lambda v, f=f: f.format(v) if pd.notna(v) else "–")
+                            for c, f in fmt_map.items()})
+    return styler
 
 
 def _empty_fig():
