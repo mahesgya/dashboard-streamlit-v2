@@ -11,6 +11,7 @@ from utils.data_loader import load_data
 
 from pages_content.overview import render_overview
 from pages_content.respondent_profile import render_respondent_profile
+from pages_content.usage_competitor import render_usage_competitor
 from pages_content.branch import render_branch
 from pages_content.touchpoint import render_touchpoint
 
@@ -26,13 +27,15 @@ load_css()
 
 df, labels = load_data()
 
-page, filtered_df, filters = render_sidebar(df)
+page, filtered_df = render_sidebar(df)
 mode = get_metric_mode()
 
 if page == "Overview":
     render_overview(filtered_df, labels, mode)
 elif page == "Respondent Profile":
     render_respondent_profile(filtered_df, labels, mode)
+elif page == "Usage & Competitor":
+    render_usage_competitor(filtered_df, labels, mode)
 elif page == "Branch":
     render_branch(filtered_df, labels, mode)
 elif page == "Touchpoint":
