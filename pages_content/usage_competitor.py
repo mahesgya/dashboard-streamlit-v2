@@ -247,19 +247,16 @@ def render_usage_competitor(df, labels=None, mode="Mean"):
     spacer(28)
     c1, c2 = st.columns(2)
     with c1:
-        render_used_banks(df)
-    with c2:
         render_competitors(df)
-
-    spacer()
-    render_savings_vs_transaction(df)
+    with c2:
+        render_savings_vs_transaction(df)
 
     spacer()
     c3, c4 = st.columns(2)
     with c3:
-        render_reason_transaction(df)
-    with c4:
         render_reason_saving(df)
+    with c4:
+        render_reason_transaction(df)
 
     spacer()
     render_purpose_tiles(df)
