@@ -6,8 +6,19 @@ deterministic jitter so multiple branches in the same city don't overlap.
 """
 
 import hashlib
+import json
+from pathlib import Path
 
 import pandas as pd
+
+# Bundled kabupaten/kota (ADM2) boundaries for the 55 cities present in the data,
+# derived from geoBoundaries IDN ADM2 and tagged with our KABKOTA / PROV names.
+KABKOTA_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "assets" / "indonesia-kabkota.geojson"
+
+
+def load_kabkota_geojson():
+    with open(KABKOTA_GEOJSON_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 # Approximate (lat, lon) for every city/regency present in the data.
 CITY_COORDS = {
