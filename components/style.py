@@ -370,6 +370,67 @@ def load_css():
 
 
     /* =====================================================
+       PILL HEATMAP (banded score table)
+    ===================================================== */
+    .ph-wrap { overflow-x: auto; padding-bottom: 2px; }
+
+    .pill-heatmap {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 6px 5px;
+    }
+
+    .pill-heatmap th {
+        color: #475569;
+        font-weight: 800;
+        font-size: 12.5px;
+        text-align: center;
+        padding: 4px 6px 8px 6px;
+        white-space: nowrap;
+    }
+
+    .pill-heatmap th.ph-rowhead { text-align: left; padding-left: 2px; }
+
+    .pill-heatmap td { padding: 0; }
+
+    .pill-heatmap td.ph-rowlabel {
+        color: #0f172a;
+        font-weight: 700;
+        font-size: 13px;
+        white-space: nowrap;
+        padding: 0 12px 0 2px;
+    }
+
+    .ph-pill {
+        display: block;
+        border-radius: 8px;
+        padding: 8px 6px;
+        text-align: center;
+        font-weight: 800;
+        font-size: 13px;
+        line-height: 1.1;
+        min-width: 56px;
+    }
+
+    .ph-pill.ph-na { background: #eef2f7; color: #94a3b8; font-weight: 700; }
+
+    .ph-legend {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .ph-legend-item {
+        border-radius: 7px;
+        padding: 4px 12px;
+        font-size: 11.5px;
+        font-weight: 800;
+    }
+
+
+    /* =====================================================
        INSIGHT BOX
     ===================================================== */
     .insight-box {
@@ -421,34 +482,112 @@ def load_css():
        MEAN / TOP-2-BOX TOGGLE — capsule / pill, single row
     ===================================================== */
     section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] {
-        background: rgba(255,255,255,0.08);
-        border: 1px solid rgba(255,255,255,0.18);
+        width: 100% !important;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 999px !important;
         padding: 3px !important;
+        box-sizing: border-box !important;
     }
 
-    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] > div {
-        gap: 0 !important;
+    /* Force the inner button-group onto a single horizontal row (no wrap),
+       wherever Streamlit nests it. */
+    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] > div,
+    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] [role="radiogroup"],
+    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] [data-baseweb="button-group"] {
+        display: flex !important;
+        flex-direction: row !important;
         flex-wrap: nowrap !important;
+        gap: 4px !important;
+        width: 100% !important;
     }
 
     section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] button {
-        border-radius: 999px !important;
-        border: none !important;
+        flex: 1 1 50% !important;
+        width: auto !important;
+        min-width: 0 !important;
+        border: 1px solid transparent !important;
         background: transparent !important;
         color: #cbd5e1 !important;
+        border-radius: 999px !important;
+        padding: 6px 6px !important;
+        font-size: 12.5px !important;
         font-weight: 800 !important;
-        font-size: 13px !important;
-        padding: 6px 10px !important;
-        flex: 1 1 0 !important;
         white-space: nowrap !important;
+        box-shadow: none !important;
+        outline: none !important;
     }
 
+    /* Selected pill — solid blue, no red theme border. */
     section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] button[aria-checked="true"],
     section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] {
         background: #0b5ba7 !important;
         color: #ffffff !important;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.25) !important;
+        border: 1px solid #0b5ba7 !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25) !important;
+    }
+
+    /* Remove the default red focus/hover/active outline. */
+    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] button:hover,
+    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] button:focus,
+    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] button:focus-visible,
+    section[data-testid="stSidebar"] div[data-testid="stSegmentedControl"] button:active {
+        border-color: rgba(255, 255, 255, 0.25) !important;
+        box-shadow: none !important;
+        outline: none !important;
+        color: #ffffff !important;
+    }
+
+
+    /* Metric toggle inside the Filters dialog (light surface) */
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] {
+        width: 100% !important;
+        background: #f1f5f9;
+        border: 1px solid #e5e7eb;
+        border-radius: 999px !important;
+        padding: 3px !important;
+        box-sizing: border-box !important;
+    }
+
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] > div,
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] [role="radiogroup"],
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] [data-baseweb="button-group"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 4px !important;
+        width: 100% !important;
+    }
+
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] button {
+        flex: 1 1 50% !important;
+        min-width: 0 !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
+        color: #475569 !important;
+        border-radius: 999px !important;
+        padding: 6px 8px !important;
+        font-size: 13px !important;
+        font-weight: 800 !important;
+        white-space: nowrap !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] {
+        background: #0b5ba7 !important;
+        color: #ffffff !important;
+        border: 1px solid #0b5ba7 !important;
+    }
+
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] button:hover,
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] button:focus,
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] button:focus-visible,
+    div[data-testid="stDialog"] div[data-testid="stSegmentedControl"] button:active {
+        border-color: #cbd5e1 !important;
+        box-shadow: none !important;
+        outline: none !important;
     }
 
 
